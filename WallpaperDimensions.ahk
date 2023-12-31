@@ -1,3 +1,6 @@
+; 1.1
+#NoEnv
+
 FileName := A_Temp "\Files Moved.txt"
 FileDelete %FileName%
 
@@ -31,7 +34,7 @@ Gui, Margin, 0, 0
 Gui, Add, Picture,h%picH% w%picW%, %pic%
 Gui, Show,, %A_ScriptName%
 
-Loop %NeedSize%\*.*, F
+Loop, Files, %NeedSize%\*.*, F
 	Num := A_Index
 
 WinGetPos,,, pWidth,, %A_ScriptName% ahk_exe AutoHotkey.exe
@@ -40,20 +43,40 @@ Gui Show,, Progress
 
 ; adding WxH to the file name and moving to appropriate folder
 SetWorkingDir, %NeedSize%
-Loop Files, %NeedSize%\*.*, F
+Loop, Files, %NeedSize%\*.*, F
 {
-	SplitPath, A_LoopFileFullPath, OutFileName, OutDir, OutExtension, OutNameNoExt, OutDrive
-	Endpos := InStr(OutNameNoExt, "_",, -1) + 1
-    dimensions := SubStr(OutNameNoExt, Endpos)
-    RegExMatch(dimensions, "\d+x\d+", result) ; an "x" with 1 or more numbers before AND after
-    If !(result) ; meaning the dimensions were not found at the end of the file name
-    {
+    SplitPath, A_LoopFileFullPath, OutFileName, OutDir, OutExtension, OutNameNoExt, OutDrive
+
+    RegExMatch( OutNameNoExt, "\d+x\d+$", HasDimensions ) ; an "x" with 1 or more numbers before AND after
+
+    If (A_LoopFileExt = "webp") { ; .webp files are not correctly processed by Gdip and must be done manually
+        If ( HasDimensions ) {
+            RegExMatch(HasDimensions, "^\d*", w)
+            RegExMatch(HasDimensions, "\d*$", h)
+        } else {
+            NotMoved := NotMoved . OutFileName . "`n"
+            GuiControl,, msctls_progress321, +1
+            Continue
+        }
+    } else {
         pToken := Gdip_StartUp()
 		pBitmap := Gdip_CreateBitmapFromFile(A_LoopFileFullPath)
 		Gdip_GetImageDimensions(pBitmap, w, h)
 		Gdip_DisposeImage(pBitmap)
 		Gdip_ShutDown(pToken)
-		NewName := OutNameNoExt w "x" h "." OutExtension
+    }
+
+    If ( OutExtension = "jpeg" ) {
+        OutExtension := "jpg"
+    }
+
+    OutNameNoExt := RegExReplace(OutNameNoExt, "\d+x\d+$", "")
+
+    if ( !RegExMatch(OutNameNoExt, "_$") ) { ; add "_" to end of name, in case I didn't already
+        OutNameNoExt := OutNameNoExt "_"
+    }
+        Dimensions := w "x" h
+		NewName := OutNameNoExt Dimensions "." OutExtension
 
 		If (h >= w)
 		{
@@ -76,34 +99,24 @@ Loop Files, %NeedSize%\*.*, F
                 LandscapeNotMoved := LandscapeNotMoved . NewName . "`n"
         }
         GuiControl,, msctls_progress321, +1
-        Sleep, 50
-    }
-    else
-    {
-        GuiControl,, msctls_progress321, +1
-        Continue
-    }
+        Sleep, 10
 }
 
 FileAppend,
 (
-Portrait items moved:
+NOT MOVED:
+%NotMoved%
 
+PORTRAITS MOVED:
 %PortraitsMoved%
 
-
-Portraits not moved:
-
+PORTRAITS NOT MOVED:
 %PortraitsNotMoved%
 
-
-Landscape items moved:
-
+LANDSCAPE MOVED:
 %LandscapeMoved%
 
-
-Landscape not moved:
-
+LANDSCAPE NOT MOVED:
 %LandscapeNotMoved%
 ), %FileName%
 Run notepad.exe "%FileName%"
